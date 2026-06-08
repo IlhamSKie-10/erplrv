@@ -1,0 +1,60 @@
+# Evaluasi Sistem Keseluruhan & Rencana Fase 2 (KPI & Performa)
+
+## 🎯 Kondisi Sistem Saat Ini (Setelah Fase 1)
+Sistem ERP ini sudah mengalami peningkatan pesat dalam hal alur kerja dan kemudahan operasional (QoL - *Quality of Life*):
+1. **Integritas Data:** Semua *input* vital di CS Workspace (Customer Account, Ekspedisi, Order Source) kini sudah terikat menggunakan ID Relasional yang solid, bukan teks mentah. Pencarian customer juga sudah cerdas (*Searchable*).
+2. **Automasi Status:** Transisi status dari *Order* ke *Desain* lalu ke *Produksi* sudah berjalan otomatis dibantu oleh sistem Notifikasi Real-Time via Observer. 
+3. **Produktivitas:** Adanya fitur *Duplikat Order*, *Progress Bar* produksi, dan *Countdown Timer* deadline desain telah memangkas banyak sekali miskomunikasi dan entri data ganda.
+
+---
+
+## 🔍 Evaluasi Celah yang Masih Ada (Fokus Fase 2)
+Meskipun operasional harian sudah lancar, dari sisi manajerial, **sistem ini belum bisa "berbicara" tentang kinerja bisnis dan tim**. Berdasarkan permintaan Anda sebelumnya untuk *menunda* bagian KPI & Performa, sekarang adalah waktu yang tepat untuk membahasnya.
+
+Berikut adalah evaluasi atas hal-hal yang masih kurang dan disarankan untuk dibangun:
+
+### 1. Tidak Ada Alat Ukur Kecepatan Kinerja (SLA)
+- **Masalah:** Saat ini kita tahu kapan order masuk dan kapan selesai, tetapi kita tidak tahu **siapa desainer tercepat**, atau **berapa rata-rata waktu yang dibutuhkan untuk produksi barang X**.
+- **Solusi:** Sistem harus menghitung selisih waktu secara otomatis dari saat tugas *diberikan* hingga *selesai* (ACC / DONE), lalu menampilkannya sebagai rapor performa (Metrik SLA - *Service Level Agreement*).
+
+### 2. Visibilitas Kesalahan / Rework
+- **Masalah:** Jika desain direvisi berkali-kali atau produksi mengalami *rework* (kerja ulang), sistem saat ini hanya mencatat statusnya saja, namun tidak mengakumulasikannya menjadi peringatan bagi manajemen.
+- **Solusi:** Tambahkan indikator **"Rework Rate"** pada masing-masing staf produksi dan desainer. Ini bisa jadi dasar pemberian insentif atau evaluasi kinerja.
+
+### 3. Kekurangan Dashboard Ringkasan (Executive Summary)
+- **Masalah:** Pemilik bisnis atau Manajer harus membuka masing-masing tabel (Tabel Order, Tabel Desain) untuk melihat keadaan perusahaan.
+- **Solusi:** Kita memerlukan **Widget Dashboard Utama** di halaman awal Filament yang langsung merangkum: Omset Harian, Pesanan Overdue, dan Antrian Pekerjaan per Divisi.
+
+---
+
+## 🛠️ Rencana Implementasi (Fase 2: KPI, Performa, & Analytics)
+
+> [!IMPORTANT]
+> **User Review Required:** Mohon tinjau rencana di bawah ini. Jika Anda setuju, saya akan langsung mengeksekusinya. Jika ada metrik KPI spesifik (misalnya target bonus) yang ingin dimasukkan, beri tahu saya.
+
+### Langkah 1: Membangun Modul Statistik (Filament Widgets)
+Saya akan membuat halaman **Dashboard Manajerial** yang terdiri dari:
+- **Stats Overview Widget:** Total Order (Hari/Bulan ini), Total Pendapatan (*Amount Paid*), Total Pesanan Terlambat.
+- **Chart / Grafik:** Grafik garis (*line chart*) pesanan masuk 7 hari terakhir.
+- **Tabel Peringatan:** Menampilkan daftar "Top 5 Pesanan dengan Resiko Terlambat Paling Tinggi".
+
+### Langkah 2: Mengukur Performa Karyawan (KPI Desainer & Produksi)
+Saya akan membuat **Halaman Laporan Kinerja (Performance Report)** yang bisa difilter per bulan:
+- **Tabel KPI Desainer:** Menampilkan Jumlah Desain Selesai, Rata-rata Waktu Desain (Menit/Jam), dan Tingkat Revisi.
+- **Tabel KPI Produksi:** Menampilkan Jumlah *Work Order* Selesai, Rata-rata Waktu Produksi vs Estimasi Waktu, dan Total *Rework*.
+
+### Langkah 3: Penambahan Rekaman Waktu (Timestamps Tracking)
+Untuk mendukung Langkah 2, saya akan memastikan model-model terkait (`DesignTask`, `ProductionWorkOrder`) memiliki mekanisme perekaman *start_time* dan *end_time* yang presisi melalui Observers, sehingga durasi kerja nyata (aktual) bisa dihitung secara akurat dan dicocokkan dengan estimasi awal.
+
+### Langkah 4: Optimasi Performa Sistem (Technical)
+Karena nantinya Dashboard akan melakukan banyak query kalkulasi berat, saya akan:
+- Menambahkan **Database Indexing** pada kolom-kolom status dan tanggal.
+- Mengaktifkan metode *Caching* agar halaman awal tidak lambat saat dibuka oleh manajemen.
+
+---
+
+## ❓ Open Questions
+1. Apakah Anda ingin Laporan KPI ini hanya bisa dilihat oleh *Role* Manager & Super Admin, atau staf biasa juga boleh melihat rapor mereka sendiri?
+2. Apakah ada formula KPI spesifik yang digunakan perusahaan Anda? (Misal: Target selesai desain adalah 2 jam, jika lebih maka skor merah).
+
+**Silakan konfirmasi jika Anda menyetujui rencana Fase 2 ini!**
