@@ -47,13 +47,22 @@ class User extends Authenticatable implements FilamentUser, HasName
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::creating(function (User $user) {
+            if (empty($user->auth_user_id)) {
+                $user->auth_user_id = 'auth-' . \Illuminate\Support\Str::uuid()->toString();
+            }
+        });
+    }
+
     // ─── FilamentUser Interface ───────────────────────────
 
     public function canAccessPanel(Panel $panel): bool
     {
-        // Allow all active users with any known role
+        // Allow all active users with specific internal roles
         return $this->status === UserStatus::ACTIVE
-            && $this->roles()->exists();
+            && $this->hasAnyRole(['SUPER_ADMIN', 'MANAGER', 'CS', 'DESIGNER', 'PRODUCTION']);
     }
 
     public function getFilamentName(): string

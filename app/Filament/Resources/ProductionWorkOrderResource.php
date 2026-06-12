@@ -42,90 +42,37 @@ class ProductionWorkOrderResource extends Resource
     public static function canAccess(): bool
     {
         $user = auth()->user();
-        return $user && $user->hasAnyRole(['PRODUCTION', 'MANAGER', 'SUPER_ADMIN', 'DEVELOPER']);
+        return $user && $user->hasAnyRole(['CS', 'DESIGNER', 'PRODUCTION', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']);
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasAnyRole(['PRODUCTION', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasAnyRole(['PRODUCTION', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasAnyRole(['PRODUCTION', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
     }
 
     public static function form(Schema $form): Schema
     {
         return $form->schema([
-            \Filament\Schemas\Components\Section::make('Informasi Pesanan')
-                ->schema([
-                    Forms\Components\Placeholder::make('order_code')
-                        ->label('Kode Pesanan')
-                        ->content(fn (ProductionWorkOrder $record) => $record->order?->order_code ?? '-'),
 
-                    Forms\Components\Placeholder::make('product_sentence')
-                        ->label('Deskripsi Produk')
-                        ->content(fn (ProductionWorkOrder $record) => $record->order?->product_sentence ?? '-'),
 
-                    Forms\Components\Placeholder::make('deadline_at')
-                        ->label('Deadline')
-                        ->content(fn (ProductionWorkOrder $record) => $record->order?->deadline_at?->format('d/m/Y') ?? '-'),
 
-                    Forms\Components\Placeholder::make('deadline_band')
-                        ->label('Urgensi')
-                        ->content(fn (ProductionWorkOrder $record) => $record->deadline_band?->value ?? '-'),
-                ])
-                ->columns([
-                    'default' => 1,
-                    'sm' => 2,
-                ]),
-
-            \Filament\Schemas\Components\Section::make('Status Produksi')
-                ->schema([
-                    Forms\Components\Select::make('status')
-                        ->label('Status')
-                        ->options(ProgressStatus::class)
-                        ->required(),
-
-                    Forms\Components\Select::make('current_stage_id')
-                        ->label('Tahap Saat Ini')
-                        ->relationship('currentStage', 'name')
-                        ->searchable()
-                        ->preload(),
-
-                    Forms\Components\Select::make('assigned_personnel_id')
-                        ->label('Petugas')
-                        ->relationship('assignedPersonnel', 'full_name')
-                        ->searchable()
-                        ->preload(),
-
-                    Forms\Components\TextInput::make('remaining_steps')
-                        ->label('Sisa Langkah')
-                        ->numeric(),
-                ])
-                ->columns([
-                    'default' => 1,
-                    'sm' => 2,
-                ]),
-
-            \Filament\Schemas\Components\Section::make('Hold / Blokir')
-                ->schema([
-                    Forms\Components\Toggle::make('is_held')
-                        ->label('Ditahan (On Hold)')
-                        ->live(),
-
-                    Forms\Components\TextInput::make('hold_reason')
-                        ->label('Alasan Hold')
-                        ->visible(fn (\Filament\Schemas\Components\Utilities\Get $get) => $get('is_held')),
-
-                    Forms\Components\Toggle::make('dependencies_met')
-                        ->label('Dependensi Terpenuhi'),
-
-                    Forms\Components\TextInput::make('blocked_reason')
-                        ->label('Alasan Blokir'),
-                ])
-                ->columns([
-                    'default' => 1,
-                    'sm' => 2,
-                ])
-                ->visibleOn('edit'),
         ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn ($query) => $query->whereNotIn('status', [ProgressStatus::COMPLETED, ProgressStatus::DONE]))
             ->poll('10s')
             ->columns([
                 Tables\Columns\TextColumn::make('order.order_code')
@@ -140,7 +87,8 @@ class ProductionWorkOrderResource extends Resource
 
                 Tables\Columns\TextColumn::make('order.product_sentence')
                     ->label('Produk')
-                    ->limit(35),
+                    ->extraAttributes(['style' => 'min-width: 350px; max-width: 350px; white-space: normal;'])
+                    ->wrap(),
 
                 Tables\Columns\TextColumn::make('progress')
                     ->label('Progress')
@@ -202,9 +150,7 @@ class ProductionWorkOrderResource extends Resource
                     ->label('Petugas')
                     ->default('-'),
 
-                Tables\Columns\IconColumn::make('is_held')
-                    ->label('Hold')
-                    ->boolean(),
+
 
                 Tables\Columns\IconColumn::make('is_pinned')
                     ->label('Pin')
@@ -231,8 +177,7 @@ class ProductionWorkOrderResource extends Resource
                         'SAFE'      => '🟢 Aman',
                     ]),
 
-                Tables\Filters\TernaryFilter::make('is_held')
-                    ->label('Hold'),
+
 
                 Tables\Filters\TernaryFilter::make('is_pinned')
                     ->label('Dipinned'),
@@ -242,21 +187,64 @@ class ProductionWorkOrderResource extends Resource
                     ->label('Log Progres')
                     ->icon('heroicon-o-clipboard-document-list')
                     ->color('info')
+                    ->visible(fn () => auth()->user()?->hasAnyRole(['PRODUCTION', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']))
                     ->form([
+                        Forms\Components\Select::make('stage_id')
+                            ->label('Tahap Saat Ini')
+                            ->options(\App\Models\ProductionStage::pluck('name', 'id'))
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->default(fn (ProductionWorkOrder $record) => $record->current_stage_id),
+
+                        Forms\Components\Select::make('personnel_id')
+                            ->label('Petugas')
+                            ->options(\App\Models\Personnel::where('division', 'Production')->pluck('full_name', 'id'))
+                            ->searchable()
+                            ->preload()
+                            ->required()
+                            ->default(fn (ProductionWorkOrder $record) => $record->assigned_personnel_id),
+
                         Forms\Components\Select::make('status')
                             ->label('Status')
-                            ->options(ProgressStatus::class)
-                            ->required(),
+                            ->options([
+                                'STARTED' => 'Mulai',
+                                'COMPLETED' => 'Selesai',
+                            ])
+                            ->required()
+                            ->default(fn (ProductionWorkOrder $record) => $record->status),
 
                         Forms\Components\Textarea::make('note')
                             ->label('Catatan')
                             ->rows(2),
 
-                        Forms\Components\DateTimePicker::make('started_at')
-                            ->label('Mulai Pada'),
+                        Forms\Components\Placeholder::make('started_at_display')
+                            ->label('Mulai Pada')
+                            ->content(new \Illuminate\Support\HtmlString('
+                                <div x-data="{
+                                    ts: ' . (now()->timestamp * 1000) . ',
+                                    time: \'\',
+                                    format() {
+                                        let d = new Date(this.ts);
+                                        let months = [\'Januari\',\'Februari\',\'Maret\',\'April\',\'Mei\',\'Juni\',\'Juli\',\'Agustus\',\'September\',\'Oktober\',\'November\',\'Desember\'];
+                                        let day = String(d.getDate()).padStart(2, \'0\');
+                                        let month = months[d.getMonth()];
+                                        let year = d.getFullYear();
+                                        let hour = String(d.getHours()).padStart(2, \'0\');
+                                        let min = String(d.getMinutes()).padStart(2, \'0\');
+                                        let sec = String(d.getSeconds()).padStart(2, \'0\');
+                                        return day + \' \' + month + \' \' + year + \', \' + hour + \':\' + min + \':\' + sec + \' WIB\';
+                                    }
+                                }" x-init="time = format(); setInterval(() => { ts += 1000; time = format(); }, 1000)">
+                                    <span x-text="time" class="text-sm font-medium"></span>
+                                </div>
+                            ')),
                     ])
                     ->action(function (ProductionWorkOrder $record, array $data) {
                         try {
+                            // Force realtime
+                            $data['started_at'] = now();
+                            
                             app(ProductionService::class)->addProgressLog(
                                 $record->id,
                                 $data,
@@ -268,37 +256,18 @@ class ProductionWorkOrderResource extends Resource
                         }
                     }),
 
-                \Filament\Actions\Action::make('hold')
-                    ->label('Toggle Hold')
-                    ->icon('heroicon-o-pause-circle')
-                    ->color('warning')
-                    ->form([
-                        Forms\Components\Toggle::make('is_held')
-                            ->label('Tahan Pesanan')
-                            ->default(fn (ProductionWorkOrder $record) => !$record->is_held),
 
-                        Forms\Components\Textarea::make('hold_reason')
-                            ->label('Alasan Hold')
-                            ->rows(2),
-                    ])
-                    ->visible(fn () => auth()->user()?->hasAnyRole(['MANAGER', 'SUPER_ADMIN']))
-                    ->action(function (ProductionWorkOrder $record, array $data) {
-                        try {
-                            app(ProductionService::class)->holdJob(
-                                $record->id,
-                                $data['is_held'],
-                                $data['hold_reason'] ?? null,
-                                auth()->id()
-                            );
-                            Notification::make()->title('Status hold diperbarui.')->success()->send();
-                        } catch (\RuntimeException $e) {
-                            Notification::make()->title($e->getMessage())->danger()->send();
-                        }
-                    }),
 
-                \Filament\Actions\EditAction::make()->label('Update'),
+                \Filament\Actions\EditAction::make()->label('Detail Progres'),
             ])
             ->bulkActions([]);
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            ProductionWorkOrderResource\RelationManagers\ProgressLogsRelationManager::class,
+        ];
     }
 
     public static function getPages(): array

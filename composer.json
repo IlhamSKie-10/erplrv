@@ -10,7 +10,8 @@
         "filament/filament": "^4.11",
         "laravel/framework": "^13.8",
         "laravel/tinker": "^3.0",
-        "livewire/livewire": "^3.8"
+        "livewire/livewire": "^3.8",
+        "maatwebsite/excel": "*"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

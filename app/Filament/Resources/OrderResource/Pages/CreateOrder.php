@@ -88,8 +88,16 @@ class CreateOrder extends \Filament\Resources\Pages\Page implements HasForms, Ha
         
         $snapshot = $order->form_snapshot ?? [];
         $data['_production_notes'] = $snapshot['_production_notes'] ?? null;
-        $data['_reference_link'] = $snapshot['_reference_link'] ?? null;
+        $data['_reference_link']   = $snapshot['_reference_link'] ?? null;
         $data['_special_requests'] = $snapshot['_special_requests'] ?? null;
+        $data['_shape']            = $snapshot['_shape'] ?? null;
+        $data['_variant']          = $snapshot['_variant'] ?? null;
+        $data['_bracket']          = $snapshot['_bracket'] ?? null;
+        $data['_lamp']             = $snapshot['_lamp'] ?? null;
+        $data['_color']            = $snapshot['_color'] ?? null;
+        $data['_size_p']           = $snapshot['_size_p'] ?? null;
+        $data['_size_l']           = $snapshot['_size_l'] ?? null;
+        $data['_text']             = $snapshot['_text'] ?? null;
 
         $this->form->fill($data);
     }
@@ -202,28 +210,42 @@ class CreateOrder extends \Filament\Resources\Pages\Page implements HasForms, Ha
             $variant     = $data['_variant'] ?? '';
             $lamp        = $data['_lamp'] ?? '';
             $bracket     = $data['_bracket'] ?? '';
-            $extras      = implode('/', array_filter([$color, $shape, $variant]));
+            $model       = $data['product_model_id'] ?? '';
+            $extras      = implode('/', array_filter([$shape, $variant, $color]));
 
-            $parts = array_filter([$accountName, $productName, $size, $text, $extras, $lamp, $bracket]);
+            $parts = array_filter([$accountName, $productName, $model, $size, $text, $extras, $lamp, $bracket]);
             $data['product_sentence'] = implode(' - ', $parts) ?: '-';
         }
 
         $notes = [];
         if (!empty($data['_production_notes'])) $notes[] = "Catatan Produksi:\n" . $data['_production_notes'];
-        if (!empty($data['_reference_link'])) $notes[] = "Link Referensi:\n" . $data['_reference_link'];
-        if (!empty($data['_special_requests'])) $notes[] = "Permintaan Khusus:\n" . $data['_special_requests'];
+        if (!empty($data['_reference_link']))    $notes[] = "Link Referensi:\n" . $data['_reference_link'];
+        if (!empty($data['_special_requests'])) $notes[] = "Catatan CS:\n" . $data['_special_requests'];
         $data['admin_notes'] = implode("\n\n", $notes) ?: null;
 
+        // Simpan semua temp fields ke snapshot agar bisa di-restore saat edit
         $snapshot = $data['form_snapshot'] ?? [];
         $snapshot['_production_notes'] = $data['_production_notes'] ?? null;
-        $snapshot['_reference_link'] = $data['_reference_link'] ?? null;
+        $snapshot['_reference_link']   = $data['_reference_link'] ?? null;
         $snapshot['_special_requests'] = $data['_special_requests'] ?? null;
+        $snapshot['_shape']            = $data['_shape'] ?? null;
+        $snapshot['_variant']          = $data['_variant'] ?? null;
+        $snapshot['_bracket']          = $data['_bracket'] ?? null;
+        $snapshot['_lamp']             = $data['_lamp'] ?? null;
+        $snapshot['_color']            = $data['_color'] ?? null;
+        $snapshot['_size_p']           = $data['_size_p'] ?? null;
+        $snapshot['_size_l']           = $data['_size_l'] ?? null;
+        $snapshot['_text']             = $data['_text'] ?? null;
         $data['form_snapshot'] = $snapshot;
 
-        unset($data['_size_p'], $data['_size_l'], $data['_text'], $data['_color'],
-              $data['_variant'], $data['_shape'], $data['_bracket'], $data['_lamp'],
-              $data['account_name'], $data['customer_phone'], $data['product_type_name'], $data['product_name'], $data['order_source_name'], 
-              $data['_production_notes'], $data['_reference_link'], $data['_special_requests'], $data['_admin_label']);
+        unset(
+            $data['_size_p'], $data['_size_l'], $data['_text'], $data['_color'],
+            $data['_variant'], $data['_shape'], $data['_bracket'], $data['_lamp'],
+            $data['account_name'], $data['customer_phone'], $data['product_type_name'],
+            $data['product_name'], $data['order_source_name'],
+            $data['_production_notes'], $data['_reference_link'], $data['_special_requests'],
+            $data['_admin_label']
+        );
 
         if ($this->editingOrderId) {
             $order = Order::find($this->editingOrderId);
@@ -232,11 +254,16 @@ class CreateOrder extends \Filament\Resources\Pages\Page implements HasForms, Ha
             }
         } else {
             $data['created_by_id'] = auth()->id();
-            if (empty($data['order_code'])) {
-                $data['order_code'] = app(\App\Services\OrderService::class)->generateOrderCode();
-            }
-            $order = Order::create($data);
-            $this->editingOrderId = $order->id; // Lock it so next autosave updates it
+            // Bungkus generate kode + create dalam satu transaksi agar atomic
+            // (mencegah duplicate order code bila 2 CS save bersamaan)
+            \Illuminate\Support\Facades\DB::transaction(function () use (&$data) {
+                if (empty($data['order_code'])) {
+                    $data['order_code'] = app(\App\Services\OrderService::class)->generateOrderCode();
+                }
+                $order = Order::create($data);
+                $this->editingOrderId = $order->id;
+            });
+            $order = Order::find($this->editingOrderId);
         }
         
         // Handle notifications and statuses via observer or directly here

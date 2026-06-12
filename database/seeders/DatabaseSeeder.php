@@ -44,5 +44,19 @@ class DatabaseSeeder extends Seeder
             $roles[RoleCode::DEVELOPER->value]->id,
             $roles[RoleCode::SUPER_ADMIN->value]->id,
         ]);
+
+        $manager = User::firstOrCreate(
+            ['email' => 'manager@example.com'],
+            [
+                'auth_user_id' => 'auth-mgr-' . uniqid(),
+                'full_name' => 'Management Access',
+                'password' => Hash::make('password'),
+                'status' => \App\Enums\UserStatus::ACTIVE,
+            ],
+        );
+
+        $manager->roles()->syncWithoutDetaching([
+            $roles[RoleCode::MANAGER->value]->id,
+        ]);
     }
 }

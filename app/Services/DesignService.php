@@ -212,6 +212,61 @@ class DesignService
         }, 10);
     }
 
+    public function pullBackFromProduction(string $taskId, string $actorUserId): array
+    {
+        return DB::transaction(function () use ($taskId, $actorUserId) {
+            $task = DesignTask::with(['order'])->lockForUpdate()->findOrFail($taskId);
+            
+            if (!$task->forwarded_at) {
+                throw new \RuntimeException('Desain belum diteruskan ke produksi, tidak bisa ditarik kembali.');
+            }
+
+            $order = $task->order;
+
+            // Validasi status ProductionWorkOrder
+            $workOrder = ProductionWorkOrder::where('order_id', $order->id)->first();
+            if ($workOrder && $workOrder->status !== 'NOT_STARTED') {
+                throw new \RuntimeException('Tidak bisa ditarik kembali karena proses produksi sudah berjalan (status bukan NOT_STARTED). Harap konfirmasi dengan tim produksi untuk mengubah status menjadi ON_HOLD atau REWORK.');
+            }
+
+            // Hapus dari antrean produksi jika masih NOT_STARTED
+            if ($workOrder) {
+                $workOrder->delete();
+            }
+
+            // Kembalikan status desain dan order
+            $task->update([
+                'forwarded_at' => null,
+                'status' => 'PROCESS',
+            ]);
+
+            $order->update([
+                'design_status' => 'PROCESS',
+                'status' => 'DESIGN_IN_PROGRESS',
+            ]);
+
+            AuditLog::create([
+                'actor_user_id' => $actorUserId,
+                'entity_type' => 'design',
+                'entity_id' => $taskId,
+                'action' => 'PULL_BACK',
+                'summary' => "Ditarik kembali dari produksi untuk revisi desain (Order: {$order->order_code})",
+            ]);
+
+            // Kirim notifikasi ke tim produksi
+            $productionTeam = \App\Models\User::whereHas('roles', fn($q) => $q->whereIn('code', ['PRODUCTION', 'MANAGER']))->get();
+            if ($productionTeam->isNotEmpty()) {
+                \Filament\Notifications\Notification::make()
+                    ->title('Penarikan Pesanan (Revisi Desain)')
+                    ->body("Pesanan {$order->order_code} telah ditarik kembali ke antrean desain untuk revisi. Harap hentikan proses produksi pesanan ini.")
+                    ->warning()
+                    ->sendToDatabase($productionTeam);
+            }
+
+            return ['success' => true];
+        }, 10);
+    }
+
     private function mapQueueCode(?string $code): string
     {
         return match ($code) {
@@ -240,7 +295,6 @@ class DesignService
 
         return match (strtoupper($value)) {
             'YES' => 'YES',
-            'REQUIRED_LATER' => 'REQUIRED_LATER',
             default => 'NO',
         };
     }

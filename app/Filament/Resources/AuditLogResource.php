@@ -83,7 +83,7 @@ class AuditLogResource extends Resource
                 Tables\Columns\TextColumn::make('action')
                     ->label('Aksi')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn ($state): string => match ($state instanceof \BackedEnum ? $state->value : $state) {
                         'CREATE'        => 'info',
                         'UPDATE', 'STATUS_CHANGE' => 'warning',
                         'SOFT_DELETE'   => 'danger',

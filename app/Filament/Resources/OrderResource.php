@@ -55,7 +55,22 @@ class OrderResource extends Resource
     public static function canAccess(): bool
     {
         $user = auth()->user();
-        return $user && $user->hasAnyRole(['CS', 'SUPER_ADMIN', 'DEVELOPER']);
+        return $user && $user->hasAnyRole(['CS', 'DESIGNER', 'PRODUCTION', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']);
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasAnyRole(['CS', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasAnyRole(['CS', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasAnyRole(['CS', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
     }
 
     public static function form(\Filament\Schemas\Schema $form): \Filament\Schemas\Schema
@@ -87,8 +102,8 @@ class OrderResource extends Resource
 
                 Tables\Columns\TextColumn::make('product_sentence')
                     ->label('Kalimat Pesanan')
-                    ->limit(45)
                     ->tooltip(fn ($record) => $record->product_sentence)
+                    ->extraAttributes(['style' => 'min-width: 350px; max-width: 350px; white-space: normal;'])
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('status')

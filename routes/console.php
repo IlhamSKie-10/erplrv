@@ -9,3 +9,5 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote')->hourly();
 
 Schedule::command('priorities:recalculate')->everyFifteenMinutes();
+Schedule::command('production:cleanup-pinned')->everyFiveMinutes();
+

@@ -4,7 +4,7 @@ namespace App\Filament\Resources\Support;
 
 /**
  * Product catalog config with feature flags.
- * Ported from auliart-production/src/lib/product-catalog.ts
+ * Ported from erplrv/src/lib/product-catalog.ts
  * 
  * Keyed by product `name` (case-insensitive) from the DB.
  * Each entry defines which optional fields are applicable.

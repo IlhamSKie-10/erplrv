@@ -14,4 +14,5 @@ enum OrderStatus: string
     case COMPLETED         = 'COMPLETED';
     case CANCELLED         = 'CANCELLED';
     case ON_HOLD           = 'ON_HOLD';
+    case RETURNED          = 'RETURNED';
 }

@@ -104,4 +104,9 @@ class Order extends Model
     {
         return $this->hasMany(Notification::class, 'order_id');
     }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(OrderReturn::class, 'order_id');
+    }
 }

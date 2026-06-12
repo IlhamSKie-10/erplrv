@@ -42,7 +42,22 @@ class DesignTaskResource extends Resource
     public static function canAccess(): bool
     {
         $user = auth()->user();
-        return $user && $user->hasAnyRole(['DESIGNER', 'SUPER_ADMIN', 'DEVELOPER']);
+        return $user && $user->hasAnyRole(['CS', 'DESIGNER', 'PRODUCTION', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']);
+    }
+
+    public static function canCreate(): bool
+    {
+        return auth()->user()?->hasAnyRole(['DESIGNER', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasAnyRole(['DESIGNER', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return auth()->user()?->hasAnyRole(['DESIGNER', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']) ?? false;
     }
 
     // ─── Form (halaman Edit) ──────────────────────────────────────────────
@@ -81,7 +96,7 @@ class DesignTaskResource extends Resource
 
                     Forms\Components\Select::make('assigned_designer_id')
                         ->label('Desainer')
-                        ->relationship('assignedDesigner', 'full_name')
+                        ->relationship('assignedDesigner', 'full_name', fn (\Illuminate\Database\Eloquent\Builder $query) => $query->where('division', 'Design'))
                         ->searchable()
                         ->preload(),
 
@@ -90,7 +105,6 @@ class DesignTaskResource extends Resource
                         ->options([
                             'YES'            => 'Ya',
                             'NO'             => 'Tidak',
-                            'REQUIRED_LATER' => 'Nanti',
                         ]),
 
                     Forms\Components\DateTimePicker::make('design_acc_at')
@@ -119,23 +133,42 @@ class DesignTaskResource extends Resource
                         $record->order?->created_at?->format('d/m/Y H:i') ?? '-'
                     ),
 
-                // ── Desainer ──────────────────────────────────────────────────────
-                Tables\Columns\SelectColumn::make('assigned_designer_id')
-                    ->label('Desainer')
-                    ->options(fn () => \App\Models\Personnel::where('division', 'Design')
-                        ->where('is_active', true)
-                        ->pluck('full_name', 'id')
-                        ->toArray()
-                    )
-                    ->placeholder('Belum Diambil')
-                    ->searchable()
-                    ->sortable(),
-
                 // ── Deskripsi produk ──────────────────────────────────────────────
                 Tables\Columns\TextColumn::make('order.product_sentence')
                     ->label('Produk')
                     ->searchable()
-                    ->limit(40),
+                    ->extraAttributes(['style' => 'min-width: 350px; max-width: 350px; white-space: normal;'])
+                    ->wrap(),
+
+                // ── Customer ──────────────────────────────────────────────────────
+                Tables\Columns\TextColumn::make('order.account.name')
+                    ->label('Customer')
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                // ── Asal Orderan — badge berwarna per platform ────────────────────
+                Tables\Columns\TextColumn::make('order.orderSource.name')
+                    ->label('Asal Orderan')
+                    ->html()
+                    ->formatStateUsing(function ($state): string {
+                        $name  = (string) $state;
+                        $lower = strtolower($name);
+                        $base  = 'display:inline-block;padding:2px 10px;border-radius:9999px;'
+                            . 'font-size:0.72rem;font-weight:700;white-space:nowrap;';
+
+                        $style = match (true) {
+                            str_contains($lower, 'shopee')
+                                => $base . 'background-color:#ee4d2d;color:#ffffff;',
+                            str_contains($lower, 'tiktok')
+                                => $base . 'background-color:#010101;color:#ffffff;',
+                            str_contains($lower, 'whatsapp') || $lower === 'wa' || str_starts_with($lower, 'wa ')
+                                => $base . 'background-color:#25D366;color:#ffffff;',
+                            default
+                                => $base . 'background-color:#6b7280;color:#ffffff;',
+                        };
+
+                        return '<span style="' . $style . '">' . e($name) . '</span>';
+                    }),
 
                 // ── Deadline ──────────────────────────────────────────────────────
                 Tables\Columns\TextColumn::make('order.deadline_at')
@@ -167,46 +200,20 @@ class DesignTaskResource extends Resource
                         }
                     }),
 
-                // ── Customer ──────────────────────────────────────────────────────
-                Tables\Columns\TextColumn::make('order.account.name')
-                    ->label('Customer')
+                // ── Desainer ──────────────────────────────────────────────────────
+                Tables\Columns\SelectColumn::make('assigned_designer_id')
+                    ->label('Desainer')
+                    ->options(fn () => \App\Models\Personnel::where('division', 'Design')
+                        ->where('is_active', true)
+                        ->pluck('full_name', 'id')
+                        ->toArray()
+                    )
+                    ->disabled(fn ($record) => $record->forwarded_at !== null || !static::canEdit(new \App\Models\DesignTask()))
+                    ->placeholder('Belum Diambil')
                     ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                // ── Asal Orderan — badge berwarna per platform ────────────────────
-                // Inline CSS: 100% kompatibel dengan semua versi Chrome.
-                Tables\Columns\TextColumn::make('order.orderSource.name')
-                    ->label('Asal Orderan')
-                    ->html()
-                    ->formatStateUsing(function ($state): string {
-                        $name  = (string) $state;
-                        $lower = strtolower($name);
-                        $base  = 'display:inline-block;padding:2px 10px;border-radius:9999px;'
-                            . 'font-size:0.72rem;font-weight:700;white-space:nowrap;';
-
-                        $style = match (true) {
-                            str_contains($lower, 'shopee')
-                                => $base . 'background-color:#ee4d2d;color:#ffffff;',
-                            str_contains($lower, 'tiktok')
-                                => $base . 'background-color:#010101;color:#ffffff;',
-                            str_contains($lower, 'whatsapp') || $lower === 'wa' || str_starts_with($lower, 'wa ')
-                                => $base . 'background-color:#25D366;color:#ffffff;',
-                            default
-                                => $base . 'background-color:#6b7280;color:#ffffff;',
-                        };
-
-                        return '<span style="' . $style . '">' . e($name) . '</span>';
-                    }),
+                    ->sortable(),
 
                 // ── Tanggal ACC — klik → popup DateTimePicker kecil ───────────────
-                //
-                // BUSINESS LOGIC:
-                //  • CS pilih ACC (design_status=ACC) → design_acc_at terisi
-                //    otomatis saat CS simpan (via upsertDesignTask / OrderService).
-                //  • CS pilih PROCESS → design_acc_at = null → designer melihat "—".
-                //  • Designer tetap bisa override/edit dengan klik langsung di sini.
-                //  • DateTimePicker default ke now() jika belum ada nilai.
-                //
                 Tables\Columns\TextColumn::make('design_acc_at')
                     ->label('Tgl ACC')
                     ->placeholder('—')
@@ -224,6 +231,7 @@ class DesignTaskResource extends Resource
                             ->icon('heroicon-o-calendar-days')
                             ->color('warning')
                             ->modalWidth('sm')
+                            ->visible(fn ($record) => $record->forwarded_at === null && auth()->user()?->hasAnyRole(['DESIGNER', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']))
                             ->form([
                                 Forms\Components\DatePicker::make('design_acc_date')
                                     ->label('Tanggal ACC')
@@ -247,19 +255,16 @@ class DesignTaskResource extends Resource
                     ),
 
                 // ── Print Sticker — inline select, langsung diedit di baris ───────
-                // print_sticker disimpan sebagai plain string tanpa enum cast
-                // sehingga SelectColumn dapat membandingkan state vs. option keys.
                 Tables\Columns\SelectColumn::make('print_sticker')
                     ->label('Print Sticker')
                     ->options([
                         'YES'            => '✅ Ya',
                         'NO'             => '❌ Tidak',
                     ])
+                    ->disabled(fn ($record) => $record->forwarded_at !== null || !static::canEdit(new \App\Models\DesignTask()))
                     ->selectablePlaceholder(false),
 
                 // ── CNC / Laser — checkbox list via action popup ───────────────────
-                // Menampilkan metode yang sudah dipilih, klik → popup checkbox.
-                // Mendukung multi-pilih (CNC + Laser sekaligus).
                 Tables\Columns\TextColumn::make('cut_methods')
                     ->label('CNC / Laser')
                     ->badge()
@@ -276,6 +281,7 @@ class DesignTaskResource extends Resource
                             ->icon('heroicon-o-scissors')
                             ->color('gray')
                             ->modalWidth('xs')
+                            ->visible(fn ($record) => $record->forwarded_at === null && auth()->user()?->hasAnyRole(['DESIGNER', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']))
                             ->form([
                                 Forms\Components\CheckboxList::make('cut_methods')
                                     ->label('Centang semua yang berlaku:')
@@ -302,8 +308,18 @@ class DesignTaskResource extends Resource
                         'PROCESS' => 'Proses',
                         'ACC'     => '✅ ACC',
                     ])
+                    ->hidden(fn (\Livewire\Component $livewire) => property_exists($livewire, 'activeTab') && $livewire->activeTab === 'Arsip')
+                    ->disabled(fn ($record) => $record->forwarded_at !== null || !static::canEdit(new \App\Models\DesignTask()))
                     ->selectablePlaceholder(false)
                     ->updateStateUsing(function ($record, $state) {
+                        if ($state === 'ACC' && empty($record->assigned_designer_id)) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Gagal: Desainer harus diisi sebelum ACC!')
+                                ->danger()
+                                ->send();
+                            return $record->status?->value ?? 'PROCESS';
+                        }
+                        
                         $record->update([
                             'status'        => $state,
                             'design_acc_at' => $state === 'ACC' ? now() : null,
@@ -360,7 +376,7 @@ class DesignTaskResource extends Resource
                     ->requiresConfirmation(fn (DesignTask $record) => !$record->forwarded_at)
                     ->modalHeading('Forward ke Produksi?')
                     ->modalDescription('Desain pesanan ini akan diteruskan ke antrian produksi.')
-                    ->visible(fn (DesignTask $record) => $record->status === DesignTaskStatus::ACC)
+                    ->visible(fn (DesignTask $record) => $record->status === DesignTaskStatus::ACC && auth()->user()?->hasAnyRole(['DESIGNER', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']))
                     ->disabled(fn (DesignTask $record) => $record->forwarded_at !== null)
                     ->action(function (DesignTask $record) {
                         try {
@@ -368,6 +384,26 @@ class DesignTaskResource extends Resource
                             Notification::make()->title('Pesanan berhasil diteruskan ke produksi.')
                                 ->success()->send();
                         } catch (\RuntimeException $e) {
+                            Notification::make()->title($e->getMessage())->danger()->send();
+                        }
+                    }),
+
+                // ── Revisi Design ──────────────────────────────────────────────────
+                \Filament\Actions\Action::make('revisi')
+                    ->label('Tarik Kembali')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->color('danger')
+                    ->button()
+                    ->requiresConfirmation()
+                    ->modalHeading('Tarik Kembali dari Produksi?')
+                    ->modalDescription('Pesanan ini akan dihapus dari antrean produksi dan kembali ke antrean desain.')
+                    ->visible(fn (DesignTask $record) => $record->forwarded_at !== null && auth()->user()?->hasAnyRole(['DESIGNER', 'SUPER_ADMIN', 'MANAGER', 'DEVELOPER']))
+                    ->action(function (DesignTask $record) {
+                        try {
+                            app(DesignService::class)->pullBackFromProduction($record->id, auth()->id());
+                            Notification::make()->title('Pesanan berhasil ditarik kembali ke antrean desain.')
+                                ->success()->send();
+                        } catch (\Exception $e) {
                             Notification::make()->title($e->getMessage())->danger()->send();
                         }
                     }),

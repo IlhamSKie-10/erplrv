@@ -12,4 +12,5 @@ enum ProductionStageCode: string
     case FINISHING = 'FINISHING';
     case BUBBLE   = 'BUBBLE';
     case DATE     = 'DATE';
+    case KIRIM    = 'KIRIM';
 }

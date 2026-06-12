@@ -5,9 +5,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use App\Enums\ProgressStatus;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 
 class ProductionProgressLog extends Model
 {
+    use HasUuids;
     protected $table = 'production_progress_logs';
 
     public $incrementing = false;

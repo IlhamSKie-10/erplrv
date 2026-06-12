@@ -7,11 +7,7 @@ use App\Enums\OrderStatus;
 use App\Enums\PackingType;
 use App\Enums\PaymentStatus;
 use App\Enums\PaymentType;
-use App\Filament\Resources\Support\ProductCatalog;
-use App\Models\CustomerAccount;
 use App\Models\Product;
-use App\Models\ProductModel;
-use App\Models\ProductType;
 use Filament\Forms;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -19,6 +15,10 @@ use Filament\Schemas\Components\Section;
 
 class OrderFormSchema
 {
+    // ────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ────────────────────────────────────────────────────────────────────────
+
     public static function buildProductSentence(Get $get): string
     {
         $productName = $get('product_name') ?? '';
@@ -32,12 +32,14 @@ class OrderFormSchema
         $variant = $get('_variant') ?? '';
         $lamp    = $get('_lamp') ?? '';
         $bracket = $get('_bracket') ?? '';
+        $model   = $get('product_model_id') ?? '';
 
-        $extras = implode('/', array_filter([$color, $shape, $variant]));
+        $extras = implode('/', array_filter([$shape, $variant, $color]));
 
         $parts = array_filter([
             $accountName ?: null,
             $productName ?: null,
+            $model       ?: null,
             $size        ?: null,
             $text        ?: null,
             $extras      ?: null,
@@ -53,6 +55,26 @@ class OrderFormSchema
         $set('product_sentence', static::buildProductSentence($get));
     }
 
+    /**
+     * Reset semua field produk ke null (dipanggil saat Jenis Produk berubah).
+     */
+    public static function resetProductFields(Set $set): void
+    {
+        $set('product_model_id', null);
+        $set('_size_p', null);
+        $set('_size_l', null);
+        $set('_text', null);
+        $set('_color', null);
+        $set('_variant', null);
+        $set('_shape', null);
+        $set('_bracket', null);
+        $set('_lamp', null);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Schema
+    // ────────────────────────────────────────────────────────────────────────
+
     public static function getSchema(): array
     {
         return [
@@ -60,7 +82,7 @@ class OrderFormSchema
                 ->columnSpan('full')
                 ->schema([
 
-                    // ── Row 1: Timestamp | Admin ──────────────────────────
+                    // ── Row 1: Timestamp | Admin ──────────────────────────────────
                     Forms\Components\Placeholder::make('waktu_order')
                         ->label('Timestamp (Real-Time)')
                         ->content(new \Illuminate\Support\HtmlString('
@@ -87,10 +109,10 @@ class OrderFormSchema
                         ->label('Admin')
                         ->content(fn () => auth()->user()?->getFilamentName() ?? '-'),
 
-                    // ── Row 2: Order By | Nama Akun ────────────────────────
+                    // ── Row 2: Order By | Nama Akun ───────────────────────────────
                     Forms\Components\Select::make('order_source_name')
-                        ->selectablePlaceholder(false)
                         ->label('Order by')
+                        ->placeholder('Pilih platform...')
                         ->options([
                             'What\'s apps' => 'What\'s apps',
                             'Tiktok'       => 'Tiktok',
@@ -112,46 +134,71 @@ class OrderFormSchema
                         ->live(onBlur: true)
                         ->afterStateUpdated(function (Get $get, Set $set, $state) {
                             if ($state) {
-                                $accountName = \App\Models\CustomerAccount::find($state)?->name;
-                                $set('_temp_account_name', $accountName);
+                                $set('_temp_account_name', \App\Models\CustomerAccount::find($state)?->name);
                             } else {
                                 $set('_temp_account_name', null);
                             }
                             static::updateSentence($get, $set);
                         }),
+
                     Forms\Components\Hidden::make('_temp_account_name'),
 
-                    // ── Row 3: Jenis Produk | Produk ────────────────────────
+                    // ── Jenis Produk (full-width, memicu perubahan form) ──────────
                     Forms\Components\Select::make('product_type_name')
                         ->label('Jenis Produk')
                         ->options([
-                            'Advertising 1' => 'Advertising 1',
-                            'Advertising 2' => 'Advertising 2',
-                            'Home Decor' => 'Homedecor',
-                            'Logo & Ukir' => 'Logo & Tulisan Ukir',
+                            'Advertising 1' => 'Advertising 1 — NeonBox',
+                            'Advertising 2' => 'Advertising 2 — NeonFlex / Letter 3D / Akrilik',
+                            'Home Decor'    => 'Home Decor',
+                            'Logo & Ukir'   => 'Logo & Tulisan Ukir',
                         ])
                         ->required()
                         ->validationMessages(['required' => ' '])
                         ->live()
+                        ->columnSpanFull()
                         ->afterStateUpdated(function (Get $get, Set $set, $state) {
-                            $set('product_id', null);
-                            $set('product_model_id', null);
-                            $set('_size_p', null);
-                            $set('_size_l', null);
-                            $set('_text', null);
-                            $set('_color', null);
-                            $set('_variant', null);
-                            $set('_shape', null);
-                            $set('_bracket', null);
-                            $set('_lamp', null);
+                            // Auto-isi NeonBox untuk Advertising 1
+                            $set('product_name', $state === 'Advertising 1' ? 'NeonBox' : null);
+                            static::resetProductFields($set);
                             static::updateSentence($get, $set);
                         }),
 
+                    // ════════════════════════════════════════════════════════════
+                    // FIELD PRODUK — 3 varian, hanya satu yang tampil sesuai tipe
+                    // ════════════════════════════════════════════════════════════
+
+                    // Advertising 1 → TextInput disabled, otomatis "NeonBox"
+                    Forms\Components\TextInput::make('product_name')
+                        ->label('Produk')
+                        ->disabled()
+                        ->dehydrated()
+                        ->default('NeonBox')
+                        ->hint('Otomatis diisi sesuai jenis produk.')
+                        ->visible(fn (Get $get) => $get('product_type_name') === 'Advertising 1'),
+
+                    // Advertising 2 → Dropdown pilihan produk
+                    Forms\Components\Select::make('product_name')
+                        ->label('Produk')
+                        ->placeholder('Pilih produk...')
+                        ->options([
+                            'NeonFlex'             => 'NeonFlex',
+                            'Letter 3D'            => 'Letter 3D',
+                            'Logo Akrilik'         => 'Logo Akrilik',
+                            'Tulisan Akrilik Spon' => 'Tulisan Akrilik Spon',
+                            'Custom'               => 'Custom',
+                        ])
+                        ->required()
+                        ->validationMessages(['required' => ' '])
+                        ->live(debounce: 0)
+                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
+                        ->visible(fn (Get $get) => $get('product_type_name') === 'Advertising 2'),
+
+                    // Home Decor & Logo & Ukir → TextInput bebas + datalist
                     Forms\Components\TextInput::make('product_name')
                         ->label('Produk')
                         ->datalist(fn (Get $get) => Product::where('is_active', true)
                             ->when($get('product_type_name'), function ($q, $v) {
-                                $q->whereHas('productType', fn($q2) => $q2->where('name', $v));
+                                $q->whereHas('productType', fn ($q2) => $q2->where('name', $v));
                             })
                             ->pluck('name')->toArray())
                         ->autocomplete(false)
@@ -165,106 +212,138 @@ class OrderFormSchema
                                     $set('product_name', $formatted);
                                 }
                             }
-                            $set('product_model_id', null);
-                            $set('_size_p', null);
-                            $set('_size_l', null);
-                            $set('_text', null);
-                            $set('_color', null);
-                            $set('_variant', null);
-                            $set('_shape', null);
-                            $set('_bracket', null);
-                            $set('_lamp', null);
+                            static::resetProductFields($set);
                             static::updateSentence($get, $set);
                         })
                         ->disabled(fn (Get $get) => !$get('product_type_name'))
-                        ->hint(fn (Get $get) => !$get('product_type_name') ? 'Pilih Jenis Produk dahulu.' : null),
+                        ->hint(fn (Get $get) => !$get('product_type_name') ? 'Pilih Jenis Produk dahulu.' : null)
+                        ->visible(fn (Get $get) => !in_array($get('product_type_name'), ['Advertising 1', 'Advertising 2'])),
 
-                    // ── Row 4: Referensi Layout | Ukuran ─────────────────────
-                    Forms\Components\Select::make('product_model_id')
-                        ->selectablePlaceholder(false)
-                        ->label('Referensi Layout')
+                    // ════════════════════════════════════════════════════════════
+                    // FIELD KONDISIONAL — Advertising 1
+                    // ════════════════════════════════════════════════════════════
+
+                    Forms\Components\Select::make('_shape')
+                        ->label('Bentuk')
+                        ->placeholder('Pilih opsi')
                         ->options([
-                            'Model 1'    => 'Model 1',
-                            'Model 2'    => 'Model 2',
-                            'Model 3'    => 'Model 3',
-                            'Model Alur' => 'Model Alur',
+                            'Bulat'  => 'Bulat',
+                            'Kotak'  => 'Kotak',
+                            'Custom' => 'Custom',
                         ])
                         ->live(debounce: 0)
-                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set)),
+                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
+                        ->visible(fn (Get $get) => $get('product_type_name') === 'Advertising 1'),
+
+                    Forms\Components\Select::make('_variant')
+                        ->label('Varian/Model')
+                        ->placeholder('Pilih opsi')
+                        ->options([
+                            '1 sisi' => '1 Sisi',
+                            '2 sisi' => '2 Sisi',
+                        ])
+                        ->live(debounce: 0)
+                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
+                        ->visible(fn (Get $get) => $get('product_type_name') === 'Advertising 1'),
+
+                    // ════════════════════════════════════════════════════════════
+                    // FIELD KONDISIONAL — Logo & Tulisan Ukir
+                    // ════════════════════════════════════════════════════════════
+
+                    Forms\Components\Select::make('product_model_id')
+                        ->label('Model')
+                        ->placeholder('Pilih opsi')
+                        ->options([
+                            'Model 1'    => '1',
+                            'Model 2'    => '2',
+                            'Model 3'    => '3',
+                            'Model Alur' => 'Alur',
+                        ])
+                        ->live(debounce: 0)
+                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
+                        ->visible(fn (Get $get) => $get('product_type_name') === 'Logo & Ukir'),
+
+                    Forms\Components\Select::make('_lamp')
+                        ->label('Lampu')
+                        ->placeholder('Pilih opsi')
+                        ->options([
+                            'Tanpa Lampu' => 'Tanpa Lampu',
+                            'Lampu'       => 'Lampu',
+                        ])
+                        ->live(debounce: 0)
+                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
+                        ->visible(fn (Get $get) => $get('product_type_name') === 'Logo & Ukir'),
+
+                    Forms\Components\TextInput::make('_color')
+                        ->label('Warna Tulisan')
+                        ->placeholder('Merah, Biru, Gold...')
+                        ->live(onBlur: true)
+                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
+                        ->visible(fn (Get $get) => $get('product_type_name') === 'Logo & Ukir'),
+
+                    // ════════════════════════════════════════════════════════════
+                    // UKURAN — Adv1, Adv2, Logo & Ukir
+                    // ════════════════════════════════════════════════════════════
 
                     \Filament\Schemas\Components\Group::make([
-                        Forms\Components\TextInput::make('P')
-                            ->label('Ukuran (CM) - P')
+                        Forms\Components\TextInput::make('_size_p')
+                            ->label('Ukuran (CM) — Panjang')
                             ->numeric()
                             ->placeholder('Panjang')
                             ->live(onBlur: true)
                             ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
                             ->suffix('x'),
 
-                        Forms\Components\TextInput::make('L')
-                            ->label(' ')
+                        Forms\Components\TextInput::make('_size_l')
+                            ->label('Lebar / Tinggi')
                             ->numeric()
-                            ->placeholder('Lebar/Tinggi)')
+                            ->placeholder('Lebar / Tinggi')
                             ->live(onBlur: true)
                             ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
-                            ->hint('Otomatis diformat PxL'),
+                            ->hint('Format: PxL cm'),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull()
+                    ->visible(fn (Get $get) => in_array(
+                        $get('product_type_name'),
+                        ['Advertising 1', 'Advertising 2', 'Logo & Ukir']
+                    )),
 
-                    // ── Spesifikasi opsional ───────────────────────────────
-                    Forms\Components\TextInput::make('_text')
-                        ->label('Tulisan')
-                        ->placeholder('Nama toko, slogan...')
-                        ->live(onBlur: true)
-                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set)),
-
-                    Forms\Components\TextInput::make('_color')
-                        ->label('Warna')
-                        ->placeholder('Merah, Biru, Custom...')
-                        ->live(onBlur: true)
-                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set)),
-
-                    Forms\Components\Select::make('_variant')
-                        ->selectablePlaceholder(false)
-                        ->label('Varian')
-                        ->live(debounce: 0)
-                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
-                        ->options([
-                            '1 sisi' => '1 Sisi',
-                            '2 sisi' => '2 Sisi',
-                        ]),
+                    // ════════════════════════════════════════════════════════════
+                    // Advertising 1 — Bracket
+                    // ════════════════════════════════════════════════════════════
 
                     Forms\Components\Select::make('_bracket')
-                        ->selectablePlaceholder(false)
                         ->label('Bracket')
-                        ->live(debounce: 0)
-                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
+                        ->placeholder('Pilih opsi')
                         ->options([
                             'Bawah'   => 'Bawah',
                             'Samping' => 'Samping',
-                        ]),
-
-                    Forms\Components\Select::make('_shape')
-                        ->selectablePlaceholder(false)
-                        ->label('Bentuk')
+                            'Custom'  => 'Custom',
+                        ])
                         ->live(debounce: 0)
                         ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
-                        ->options([
-                            'Bulat' => 'Bulat',
-                            'Kotak' => 'Kotak',
-                        ]),
+                        ->visible(fn (Get $get) => $get('product_type_name') === 'Advertising 1'),
 
-                    Forms\Components\Select::make('_lamp')
-                        ->selectablePlaceholder(false)
-                        ->label('Lampu')
-                        ->live(debounce: 0)
-                        ->afterStateUpdated(fn (Get $get, Set $set) => static::updateSentence($get, $set))
-                        ->options([
-                            'Tanpa Lampu' => 'Tanpa Lampu',
-                            'Lampu'       => 'Lampu',
-                        ]),
+                    // ════════════════════════════════════════════════════════════
+                    // CATATAN CS — Adv1, Adv2, Logo & Ukir
+                    // ════════════════════════════════════════════════════════════
 
-                    // ── Row: Deadline + Daerah ───────────────────────────
+                    Forms\Components\Textarea::make('_special_requests')
+                        ->label('Catatan CS')
+                        ->rows(2)
+                        ->placeholder('Catatan tambahan untuk desainer / produksi...')
+                        ->columnSpanFull()
+                        ->visible(fn (Get $get) => in_array(
+                            $get('product_type_name'),
+                            ['Advertising 1', 'Advertising 2', 'Logo & Ukir']
+                        )),
+
+                    // ════════════════════════════════════════════════════════════
+                    // SECTION BAWAH — selalu tampil
+                    // ════════════════════════════════════════════════════════════
+
+                    // Deadline | Daerah
                     Forms\Components\DatePicker::make('deadline_at')
                         ->label('Deadline')
                         ->required()
@@ -276,7 +355,9 @@ class OrderFormSchema
                             $deadline = $get('deadline_at');
                             if (!$deadline) return null;
                             try {
-                                $days = (int) now()->startOfDay()->diffInDays(\Carbon\Carbon::parse($deadline)->startOfDay(), false);
+                                $days = (int) now()->startOfDay()->diffInDays(
+                                    \Carbon\Carbon::parse($deadline)->startOfDay(), false
+                                );
                                 if ($days < 0)  return '🔴 Deadline sudah lewat!';
                                 if ($days === 0) return '🟠 Deadline HARI INI!';
                                 if ($days <= 3)  return '🟡 H-' . $days . ' — segera!';
@@ -285,7 +366,6 @@ class OrderFormSchema
                         }),
 
                     Forms\Components\Select::make('city')
-                        ->selectablePlaceholder(false)
                         ->label('Daerah Tujuan')
                         ->searchable()
                         ->getSearchResultsUsing(function (string $search): array {
@@ -295,29 +375,37 @@ class OrderFormSchema
                         ->allowHtml(false)
                         ->placeholder('Ketik nama kecamatan, kota...'),
 
-                    // ── Row: Ekspedisi + Packing ─────────────────────────
+                    // Ekspedisi | Packing
                     Forms\Components\Select::make('expedition_id')
                         ->label('Ekspedisi')
-                        ->relationship('expedition', 'name')
+                        ->placeholder('Pilih ekspedisi...')
+                        ->options(fn () => \App\Models\Carrier::where('is_active', true)
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                            ->toArray())
                         ->required()
                         ->validationMessages(['required' => ' '])
-                        ->searchable(),
+                        ->searchable()
+                        ->preload(),
 
                     Forms\Components\Select::make('packing_type')
                         ->label('Jenis Packing')
+                        ->placeholder('Pilih opsi')
                         ->options(PackingType::class)
                         ->required()
                         ->validationMessages(['required' => ' ']),
 
-                    // ── Row: Payment ─────────────────────────────────────
+                    // Payment Type | Payment Status
                     Forms\Components\Select::make('payment_type')
                         ->label('Tipe Pembayaran')
+                        ->placeholder('Pilih opsi')
                         ->options(PaymentType::class)
                         ->required()
                         ->validationMessages(['required' => ' ']),
 
                     Forms\Components\Select::make('payment_status')
                         ->label('Status Pembayaran')
+                        ->placeholder('Pilih opsi')
                         ->options(PaymentStatus::class)
                         ->required()
                         ->validationMessages(['required' => ' '])
@@ -330,6 +418,7 @@ class OrderFormSchema
                             }
                         }),
 
+                    // Total | Jumlah Dibayar
                     Forms\Components\TextInput::make('total_order')
                         ->label('Total Pesanan')
                         ->prefix('Rp')
@@ -365,9 +454,10 @@ class OrderFormSchema
                             default => 'Isi nominal DP.',
                         }),
 
-                    // ── Row: Status ──────────────────────────────────────
+                    // Status | Design Status
                     Forms\Components\Select::make('status')
                         ->label('Status Pesanan')
+                        ->placeholder('Pilih opsi')
                         ->options([
                             'DRAFT'     => 'Draft',
                             'CONFIRMED' => 'Confirmed',
@@ -378,10 +468,11 @@ class OrderFormSchema
 
                     Forms\Components\Select::make('design_status')
                         ->label('Status Desain')
+                        ->placeholder('Pilih opsi')
                         ->options(DesignStatus::class)
                         ->required(),
 
-                    // ── Catatan Tambahan (full width) ────────────────────
+                    // Catatan Produksi & Link (selalu tampil, untuk internal)
                     Forms\Components\Textarea::make('_production_notes')
                         ->label('Catatan Produksi')
                         ->rows(3)
@@ -394,13 +485,7 @@ class OrderFormSchema
                         ->placeholder('Contoh: https://drive.google.com/...')
                         ->columnSpanFull(),
 
-                    Forms\Components\Textarea::make('_special_requests')
-                        ->label('Permintaan Khusus')
-                        ->rows(3)
-                        ->placeholder('Contoh: Mohon desain dibuat minimalis')
-                        ->columnSpanFull(),
-
-                    // ── Kalimat preview (full width) ─────────────────────
+                    // ── Preview Kalimat Pesanan ───────────────────────────────
                     Forms\Components\Placeholder::make('product_sentence_preview')
                         ->label('📋 Format Kalimat Pesanan')
                         ->content(fn (Get $get) => static::buildProductSentence($get) ?: '—')

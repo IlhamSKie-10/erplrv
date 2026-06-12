@@ -43,17 +43,6 @@ class ProductionService
             ->orderByRaw('is_pinned DESC, priority_tier ASC, dynamic_score DESC')
             ->get();
 
-        foreach ($workOrders as $workOrder) {
-            if ($workOrder->is_pinned && $workOrder->pinned_expires_at && $now->gt($workOrder->pinned_expires_at)) {
-                $workOrder->update([
-                    'is_pinned' => false,
-                    'pinned_expires_at' => null,
-                    'manual_sort_index' => null,
-                ]);
-                $workOrder->refresh();
-            }
-        }
-
         return $workOrders->map(fn (ProductionWorkOrder $workOrder) => $this->formatWorkOrder($workOrder))->toArray();
     }
 
@@ -112,6 +101,11 @@ class ProductionService
 
             $workOrder->update($updateData);
             $workOrder->refresh();
+
+            if (isset($updateData['status']) && in_array($updateData['status'], ['COMPLETED', 'DONE'], true)) {
+                // READY_TO_SHIP → CS konfirmasi pengiriman → SHIPPED (tidak langsung SHIPPED)
+                $workOrder->order()->update(['status' => \App\Enums\OrderStatus::READY_TO_SHIP]);
+            }
 
             $this->recalculatePriorityForJob($workOrder, $now);
 
@@ -175,6 +169,11 @@ class ProductionService
                 'latest_progress_at' => $now,
             ]);
             $workOrder->refresh();
+
+            if (in_array($status, ['COMPLETED', 'DONE'], true)) {
+                // READY_TO_SHIP → CS konfirmasi pengiriman → SHIPPED (tidak langsung SHIPPED)
+                $workOrder->order()->update(['status' => \App\Enums\OrderStatus::READY_TO_SHIP]);
+            }
 
             $this->recalculatePriorityForJob($workOrder, $now);
 

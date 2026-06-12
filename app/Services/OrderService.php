@@ -92,25 +92,31 @@ class OrderService
 
     public function generateOrderCode(): string
     {
-        $now = now();
-        $month = $now->month;            // 1–12 (tanpa leading zero, mudah diucapkan)
-        $startOfMonth = $now->copy()->startOfMonth();
+        // Dibungkus DB::transaction + lockForUpdate untuk mencegah race condition
+        // jika 2 CS menyimpan pesanan secara bersamaan (duplicate order code).
+        return DB::transaction(function () {
+            $now = now();
+            $month = $now->month;            // 1–12 (tanpa leading zero, mudah diucapkan)
+            $startOfMonth = $now->copy()->startOfMonth();
 
-        // Ambil order terakhir di bulan ini dan ekstrak nomor urut
-        $lastOrder = Order::where('created_at', '>=', $startOfMonth)
-            ->orderBy('created_at', 'desc')
-            ->first();
+            // lockForUpdate → baris terakhir dikunci sampai transaksi selesai,
+            // sehingga pemanggil ke-2 menunggu dan membaca urutan yang sudah bertambah.
+            $lastOrder = Order::where('created_at', '>=', $startOfMonth)
+                ->orderByDesc('created_at')
+                ->lockForUpdate()
+                ->first();
 
-        $sequence = 1;
-        if ($lastOrder?->order_code) {
-            // Format baru: "01-6", "02-6", dsb.
-            if (preg_match('/^(\d+)-(\d+)$/', $lastOrder->order_code, $matches)) {
-                $sequence = ((int) $matches[1]) + 1;
+            $sequence = 1;
+            if ($lastOrder?->order_code) {
+                // Format: "01-6", "02-6", dsb.
+                if (preg_match('/^(\d+)-(\d+)$/', $lastOrder->order_code, $matches)) {
+                    $sequence = ((int) $matches[1]) + 1;
+                }
             }
-        }
 
-        // Format: {urutan 2 digit}-{bulan}  contoh: 01-6, 02-6, 13-12
-        return str_pad((string) $sequence, 2, '0', STR_PAD_LEFT) . '-' . $month;
+            // Format: {urutan 2 digit}-{bulan}  contoh: 01-6, 02-6, 13-12
+            return str_pad((string) $sequence, 2, '0', STR_PAD_LEFT) . '-' . $month;
+        });
     }
 
     public function buildFormSnapshot(array $input): array
@@ -310,7 +316,6 @@ class OrderService
                 'INFO'
             );
 
-            // Filament Native Database Notification
             $designers = \App\Models\User::whereHas('roles', fn($q) => $q->where('code', 'DESIGNER'))->get();
             if ($designers->isNotEmpty()) {
                 \Filament\Notifications\Notification::make()
@@ -330,15 +335,15 @@ class OrderService
             $record = Order::findOrFail($orderId);
             $new = $record->replicate(['order_code', 'submitted_at', 'created_at', 'updated_at']);
             $new->status     = OrderStatus::DRAFT;
-            $new->order_code = 'ORD-' . strtoupper(substr(uniqid(), -6));
+            $new->order_code = $this->generateOrderCode();
             $new->save();
 
             AuditLog::create([
                 'actor_user_id' => $actorUserId,
-                'entity_type' => 'order',
-                'entity_id' => $new->id,
-                'action' => 'DUPLICATE',
-                'summary' => "Duplicated from order {$record->order_code}",
+                'entity_type'   => 'order',
+                'entity_id'     => $new->id,
+                'action'        => 'DUPLICATE',
+                'summary'       => "Duplicated from order {$record->order_code}",
             ]);
 
             return $new;

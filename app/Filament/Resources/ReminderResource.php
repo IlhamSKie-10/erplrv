@@ -3,7 +3,6 @@
 namespace App\Filament\Resources;
 
 use App\Enums\ReminderStatus;
-use App\Enums\ReminderType;
 use App\Filament\Resources\ReminderResource\Pages;
 use App\Models\Reminder;
 use Filament\Forms;
@@ -46,27 +45,28 @@ class ReminderResource extends Resource
     public static function form(Schema $form): Schema
     {
         return $form->schema([
-            Forms\Components\Select::make('type')
-                ->label('Tipe')
-                ->options(ReminderType::class)
-                ->required(),
-            
             Forms\Components\Select::make('assignee_id')
                 ->label('Ditugaskan Ke')
-                ->relationship('assignee', 'name')
+                ->relationship('assignee', 'full_name')
                 ->searchable()
-                ->preload(),
+                ->preload()
+                ->required(),
 
             Forms\Components\TextInput::make('title')
                 ->label('Judul')
                 ->required(),
 
-            Forms\Components\Textarea::make('description')
-                ->label('Deskripsi')
+            Forms\Components\Textarea::make('message')
+                ->label('Pesan')
+                ->required()
                 ->rows(3),
 
             Forms\Components\DateTimePicker::make('due_at')
                 ->label('Jatuh Tempo')
+                ->required(),
+
+            Forms\Components\DateTimePicker::make('remind_at')
+                ->label('Ingatkan Pada')
                 ->required(),
 
             Forms\Components\Select::make('status')
@@ -90,7 +90,7 @@ class ReminderResource extends Resource
                     ->label('Judul')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('assignee.name')
+                Tables\Columns\TextColumn::make('assignee.full_name')
                     ->label('Ditugaskan Ke')
                     ->searchable(),
 

@@ -12,4 +12,5 @@ enum AuditAction: string
     case FORWARD       = 'FORWARD';
     case STATUS_CHANGE = 'STATUS_CHANGE';
     case SOFT_DELETE   = 'SOFT_DELETE';
+    case PULL_BACK     = 'PULL_BACK';
 }
